@@ -15,6 +15,9 @@ export type Invoice = {
   due_date: string | null;
   payment_link: string | null;
   follow_up_status: string;
+  paid_at: string | null;
+  first_reminder_at: string | null;
+  second_reminder_at: string | null;
   created_at: string;
   user_id: string | null;
 };

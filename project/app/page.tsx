@@ -138,6 +138,14 @@ function getNextStatus(currentStatus: string): string {
   return 'Escalated';
 }
 
+function calcDaysOverdue(invoice: Invoice): number {
+  if (invoice.follow_up_status === 'Paid' || !invoice.due_date) return 0;
+  const due = new Date(invoice.due_date).getTime();
+  if (isNaN(due)) return 0;
+  const diff = Date.now() - due;
+  return diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -176,10 +184,10 @@ export default function DashboardPage() {
     const { data, error } = await supabase
       .from('invoices')
       .select('*')
-      .order('days_overdue', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) {
-      setLoadError('Something went wrong while loading your invoices. Please try again.');
+      setLoadError("We couldn't load your invoices. This is usually a temporary connection issue — please try again.");
       setLoading(false);
     } else if (data) {
       setInvoices(data as Invoice[]);
@@ -244,9 +252,11 @@ export default function DashboardPage() {
   const handleMarkAsPaid = async (invoice: Invoice) => {
     setActionLoadingId(invoice.id);
 
+    const now = new Date().toISOString();
+
     const { error } = await supabase
       .from('invoices')
-      .update({ follow_up_status: 'Paid' })
+      .update({ follow_up_status: 'Paid', paid_at: now })
       .eq('id', invoice.id);
 
     if (error) {
@@ -260,7 +270,7 @@ export default function DashboardPage() {
 
     setInvoices((prev) =>
       prev.map((inv) =>
-        inv.id === invoice.id ? { ...inv, follow_up_status: 'Paid' } : inv
+        inv.id === invoice.id ? { ...inv, follow_up_status: 'Paid', paid_at: now } : inv
       )
     );
 
@@ -286,10 +296,18 @@ export default function DashboardPage() {
     if (!invoice) return;
 
     const nextStatus = getNextStatus(invoice.follow_up_status);
+    const now = new Date().toISOString();
+
+    const updateData: Record<string, string> = { follow_up_status: nextStatus };
+    if (nextStatus === 'Reminder 1 Sent') {
+      updateData.first_reminder_at = now;
+    } else if (nextStatus === 'Reminder 2 Sent') {
+      updateData.second_reminder_at = now;
+    }
 
     const { error } = await supabase
       .from('invoices')
-      .update({ follow_up_status: nextStatus })
+      .update(updateData)
       .eq('id', invoiceId);
 
     if (error) {
@@ -302,7 +320,7 @@ export default function DashboardPage() {
 
     setInvoices((prev) =>
       prev.map((inv) =>
-        inv.id === invoiceId ? { ...inv, follow_up_status: nextStatus } : inv
+        inv.id === invoiceId ? { ...inv, ...updateData } : inv
       )
     );
 
@@ -329,11 +347,11 @@ export default function DashboardPage() {
       );
     }
 
-    result = [...result].sort((a, b) =>
-      sortDirection === 'desc'
-        ? b.days_overdue - a.days_overdue
-        : a.days_overdue - b.days_overdue
-    );
+    result = [...result].sort((a, b) => {
+      const aDays = calcDaysOverdue(a);
+      const bDays = calcDaysOverdue(b);
+      return sortDirection === 'desc' ? bDays - aDays : aDays - bDays;
+    });
 
     return result;
   }, [invoices, statusFilter, searchQuery, sortDirection]);
@@ -356,7 +374,12 @@ export default function DashboardPage() {
       inv.follow_up_status !== 'Pending' && inv.follow_up_status !== 'Paid'
   ).length;
   const moneyRecovered = invoices
-    .filter((inv) => inv.follow_up_status === 'Paid')
+    .filter(
+      (inv) =>
+        inv.follow_up_status === 'Paid' &&
+        inv.paid_at != null &&
+        (inv.first_reminder_at != null || inv.second_reminder_at != null)
+    )
     .reduce((sum, inv) => sum + Number(inv.amount), 0);
   const outstandingCount = invoices.filter(
     (inv) => inv.follow_up_status !== 'Paid'
@@ -574,7 +597,7 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary" className="gap-1.5">
                     <AlertTriangle className="h-3 w-3 text-destructive" />
-                    {invoices.filter((i) => i.days_overdue > 30 && i.follow_up_status !== 'Paid').length} critical
+                    {invoices.filter((i) => calcDaysOverdue(i) > 30 && i.follow_up_status !== 'Paid').length} critical
                   </Badge>
                 </div>
               )}
@@ -676,7 +699,7 @@ export default function DashboardPage() {
               <TableBody>
                 {filteredInvoices.map((invoice) => {
                   const badge = statusBadgeVariant(invoice.follow_up_status);
-                  const isCritical = invoice.days_overdue > 30;
+                  const isCritical = calcDaysOverdue(invoice) > 30;
                   const isPaid = invoice.follow_up_status === 'Paid';
                   const isActionLoading = actionLoadingId === invoice.id;
                   return (
@@ -721,7 +744,10 @@ export default function DashboardPage() {
                             {isCritical && (
                               <AlertTriangle className="h-3.5 w-3.5" />
                             )}
-                            {invoice.days_overdue > 0 ? `${invoice.days_overdue} days` : 'Not overdue'}
+                            {(() => {
+                              const days = calcDaysOverdue(invoice);
+                              return days > 0 ? `${days} days` : 'Not overdue';
+                            })()}
                           </span>
                         )}
                       </TableCell>

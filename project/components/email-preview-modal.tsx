@@ -50,10 +50,19 @@ function formatMMDDYYYY(date: Date): string {
   return `${mm}/${dd}/${yyyy}`;
 }
 
+function calcDaysOverdue(invoice: Invoice): number {
+  if (invoice.follow_up_status === 'Paid' || !invoice.due_date) return 0;
+  const due = new Date(invoice.due_date).getTime();
+  if (isNaN(due)) return 0;
+  const diff = Date.now() - due;
+  return diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
+}
+
 function generateEmailSubject(invoice: Invoice): string {
   const tone = getTone(invoice.follow_up_status);
+  const days = calcDaysOverdue(invoice);
   if (tone.label.startsWith('Firm — Final')) {
-    return `FINAL NOTICE: Invoice ${invoice.invoice_number} — ${invoice.days_overdue} Days Overdue`;
+    return `FINAL NOTICE: Invoice ${invoice.invoice_number} — ${days} Days Overdue`;
   }
   if (tone.label.startsWith('Firm')) {
     return `Second Reminder: Invoice ${invoice.invoice_number} — Action Required`;
@@ -67,6 +76,7 @@ function generateEmailBody(
 ): string {
   const tone = getTone(invoice.follow_up_status);
   const firstName = invoice.client_name.split(' ')[0];
+  const days = calcDaysOverdue(invoice);
   const formattedAmount = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -84,7 +94,7 @@ function generateEmailBody(
   • Invoice: ${invoice.invoice_number}
   • Amount Due: ${formattedAmount}${dueDateStr ? `
   • Due Date: ${dueDateStr}` : ''}
-  • Days Overdue: ${invoice.days_overdue}${paymentLine}`;
+  • Days Overdue: ${days}${paymentLine}`;
 
   const signOff = settings?.email_signature?.trim()
     ? settings.email_signature.trim()
@@ -97,7 +107,7 @@ function generateEmailBody(
   if (tone.label.startsWith('Firm — Final')) {
     return `Dear ${firstName},
 
-Despite multiple reminders, Invoice ${invoice.invoice_number} for ${formattedAmount} remains unpaid and is now ${invoice.days_overdue} days overdue.
+Despite multiple reminders, Invoice ${invoice.invoice_number} for ${formattedAmount} remains unpaid and is now ${days} days overdue.
 
 This is our final notice before we escalate this matter to our collections department. We strongly prefer to resolve this amicably and avoid any disruption to your account or ongoing services.
 
@@ -114,7 +124,7 @@ ${signOff}${addressBlock}`;
   if (tone.label.startsWith('Firm')) {
     return `Dear ${firstName},
 
-We're following up again regarding Invoice ${invoice.invoice_number} for ${formattedAmount}, which is now ${invoice.days_overdue} days overdue.
+We're following up again regarding Invoice ${invoice.invoice_number} for ${formattedAmount}, which is now ${days} days overdue.
 
 Our previous reminder does not appear to have been actioned. We understand that payments can occasionally slip through the cracks, so we wanted to reach out once more before considering escalation.
 
@@ -132,13 +142,13 @@ ${signOff}${addressBlock}`;
 
 Hope you're doing well!
 
-Just a friendly nudge that Invoice ${invoice.invoice_number} for ${formattedAmount} is currently ${invoice.days_overdue} days overdue. We know things can get busy, so we wanted to send a quick reminder in case this one slipped through the cracks.
+Just a friendly nudge that Invoice ${invoice.invoice_number} for ${formattedAmount} is currently ${days} days overdue. We know things can get busy, so we wanted to send a quick reminder in case this one slipped through the cracks.
 
 Here are the details:
   • Invoice: ${invoice.invoice_number}
   • Amount Due: ${formattedAmount}${dueDateStr ? `
   • Due Date: ${dueDateStr}` : ''}
-  • Days Overdue: ${invoice.days_overdue}${paymentLine}
+  • Days Overdue: ${days}${paymentLine}
 
 If payment has already been sent, please disregard this note — and thank you! If you have any questions or need more time, just reply to this email and we'll be happy to help.
 

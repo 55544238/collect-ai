@@ -49,7 +49,7 @@ export function InvoiceFormDialog({
         setClientName('');
         setClientEmail('');
         setAmount('');
-        setDueDate('');
+        setDueDate(new Date().toISOString().slice(0, 10));
         setPaymentLink('');
       }
     }
@@ -75,11 +75,11 @@ export function InvoiceFormDialog({
       return;
     }
 
-    const minDate = new Date('2000-01-01');
+    const minDate = new Date('2020-01-01');
     if (parsedDate < minDate) {
       toast({
         title: 'Invalid due date',
-        description: 'The due date cannot be earlier than the year 2000.',
+        description: 'The due date cannot be earlier than the year 2020.',
       });
       return;
     }
@@ -142,9 +142,6 @@ export function InvoiceFormDialog({
         amount: parsedAmount,
         due_date: dueDate,
         payment_link: paymentLink.trim() || null,
-        days_overdue: Math.floor(
-          (Date.now() - new Date(dueDate).getTime()) / (1000 * 60 * 60 * 24)
-        ),
         follow_up_status: 'Pending',
       });
 
@@ -250,7 +247,7 @@ export function InvoiceFormDialog({
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              min="2000-01-01"
+              min="2020-01-01"
               max={`${new Date().getFullYear() + 5}-12-31`}
               required
             />
